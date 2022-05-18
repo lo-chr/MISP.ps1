@@ -19,8 +19,8 @@
 
 .NOTES
     Author: Christoph Lobmeyer
-    Last Edit: 2022-04-03
-    Version 1.0 - initial release of MISP.ps1
+    Last Edit: 2022-05-18
+    Version 1.0.1 - Reducing code duplication
 #>
 
 
