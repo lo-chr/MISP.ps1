@@ -72,29 +72,49 @@ function Get-MispConfiguration() {
 
 # Function tests/establishes the MISP connection.
 function Test-MispConnection() {
-	$MispRequestHeaders = @{
-		'Authorization' = $global:MispSettings.APIKey
-		'Accept' = 'application/json'
-		'Content-Type' = 'application/json'
-	}
+	$response = Invoke-MispRequest -RequestEndpoint "servers/getVersion" -RequestMethod "Get"
 
-	$RequestUri = $global:MispSettings.InstanceUri + "servers/getVersion"
-
-	try {
-		if((-not $global:MispSettings.DebugMode) -or ($null -eq $global:MispSettings.DebugMode)) {
-			$result = Invoke-RestMethod -Uri $RequestUri -Method Get -Headers $MispRequestHeaders
-			Write-Host -ForegroundColor green "Connection to MISP-Instance" $global:MispSettings.InstanceUri "with version" $result.version "successful."
-		} else {
-			$result = Invoke-RestMethod -Uri $RequestUri -Method Get -Headers $MispRequestHeaders -SkipCertificateCheck
-			Write-Host -ForegroundColor green "Connection to MISP-Instance" $global:MispSettings.InstanceUri "with version" $result.version "successful."
-		}
-		return $true		
-	} catch {
+	if($response -ne $null) {
+		Write-Host -ForegroundColor green "Connection to MISP-Instance" $global:MispSettings.InstanceUri "with version" $result.version "successful."
+		return $true
+	} else {
 		Write-Host -ForegroundColor red "Error while connecting to MISP-Instance. Check the connection, the address of the instance and the API-Key. Maybe you have a self signed certificate and are not running in debug mode?"
-		Write-Debug $_.ErrorDetails
 		return $false
 	}
 }
+
+# Function for generic MISP request (deduplication)
+# Function gets a MISP Event by its ID
+function Invoke-MispRequest() {
+	param (
+		$RequestEndpoint,
+		$RequestMethod,
+		$RequestBody
+	)
+
+	if(($RequestMethod.ToLower() -eq "post") -and ($RequestBody -eq $null)) {
+		return $null
+	} else {
+		$MispRequestHeaders = @{
+			'Authorization' = $global:MispSettings.APIKey
+			'Accept' = 'application/json'
+			'Content-Type' = 'application/json'
+		}
+		$RequestUri = $global:MispSettings.InstanceUri + $RequestEndpoint
+
+		try {
+			if((-not $global:MispSettings.DebugMode) -or ($null -eq $global:MispSettings.DebugMode)) {
+				$result = Invoke-RestMethod -Uri $RequestUri -Method $RequestMethod -Headers $MispRequestHeaders -Body $RequestBody
+			} else {
+				$result = Invoke-RestMethod -Uri $RequestUri -Method $RequestMethod -Headers $MispRequestHeaders -Body $RequestBody -SkipCertificateCheck
+			}
+			return $result
+		} catch {
+			return $null
+		}
+	}
+}
+
 
 # Function checks for a given event, if that event is already known (stored as a saved event).
 function Get-MispEventKnownState {
@@ -117,21 +137,10 @@ function Get-MispEventById() {
 		$EventId
 	)
 
-	$MispRequestHeaders = @{
-		'Authorization' = $global:MispSettings.APIKey
-		'Accept' = 'application/json'
-		'Content-Type' = 'application/json'
-	}
-	$RequestUri = $global:MispSettings.InstanceUri + "events/view/" + $EventId
-
-	try {
-		if((-not $global:MispSettings.DebugMode) -or ($null -eq $global:MispSettings.DebugMode)) {
-			$result = Invoke-RestMethod -Uri $RequestUri -Method 'Get' -Headers $MispRequestHeaders
-		} else {
-			$result = Invoke-RestMethod -Uri $RequestUri -Method 'Get' -Headers $MispRequestHeaders -SkipCertificateCheck
-		}
-		return $result.Event
-	} catch {
+	$response = Invoke-MispRequest -RequestEndpoint "events/view/$EventId" -RequestMethod "Get"
+	if($response -ne $null) {
+		return $response.Event
+	} else {
 		return $null
 	}
 }
@@ -142,28 +151,18 @@ function Search-MispEventsByAttribute() {
 		$SearchAttribute
 	)
 
-	$MispRequestHeaders = @{
-		'Authorization' = $global:MispSettings.APIKey
-		'Accept' = 'application/json'
-		'Content-Type' = 'application/json'
-	}
-
 	$MispSearch = @{
 		returnFormat = "json"
 		quickfilter = 1
 		value = $SearchAttribute
 	} | ConvertTo-Json
 
-	$RequestUri = $global:MispSettings.InstanceUri + "events/restsearch/" + $EventId
 
-	try {
-		if((-not $global:MispSettings.DebugMode) -or ($null -eq $global:MispSettings.DebugMode)) {
-			$result = Invoke-RestMethod -Uri $RequestUri -Method 'Post' -Headers $MispRequestHeaders -Body $MispSearch
-		} else {
-			$result = Invoke-RestMethod -Uri $RequestUri -Method 'Post' -Headers $MispRequestHeaders -SkipCertificateCheck -Body $MispSearch
-		}
-		return $result.response.Event
-	} catch {
+
+	$response = Invoke-MispRequest -RequestEndpoint "events/restsearch/" -RequestMethod "Post" -RequestBody $MispSearch
+	if($response -ne $null) {
+		return $response.response.Event
+	} else {
 		return $null
 	}
 }
