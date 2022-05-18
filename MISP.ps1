@@ -20,7 +20,7 @@
 .NOTES
     Author: Christoph Lobmeyer
     Last Edit: 2022-05-18
-    Version 1.0.1 - Reducing code duplication
+    Version 1.0.2 - Basic support for MISP objects
 #>
 
 
@@ -318,6 +318,15 @@ function Write-MispEventDetail {
 													name = 'Last Change'
 													expression={(Get-Date 01.01.1970)+([System.TimeSpan]::fromseconds([convert]::ToInt64($_.timestamp, 10)))}
 												}, @{ name = "IDS";expression={$_.to_ids}}
+	# Print attributes in objects of event
+	foreach($object in $MispEvent.Object) {
+		$object.Attribute | Format-Table -Property @{ name = "ID";expression={$_.id}}, @{ name = "Category";expression={$_.category}}, @{ name = "Type";expression={$_.type}},
+												@{ name = "Value";expression={$_.value}}, @{ name = "Comment";expression={$_.comment}},
+												@{
+													name = 'Last Change'
+													expression={(Get-Date 01.01.1970)+([System.TimeSpan]::fromseconds([convert]::ToInt64($_.timestamp, 10)))}
+												}, @{ name = "IDS";expression={$_.to_ids}}
+	}
 }
 
 # Function prints a table for given MISP events
