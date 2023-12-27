@@ -19,7 +19,7 @@
 
 .NOTES
     Author: Christoph Lobmeyer
-    Last Edit: 2022-05-18
+    Last Edit: 2023-12-27
     Version 1.0.2 - Basic support for MISP objects
 #>
 
