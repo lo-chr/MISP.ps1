@@ -25,7 +25,7 @@
 
 
 # Global variables for storing saved events and settings
-$global:loadedMispEvents = New-Object System.Collections.ArrayList
+$global:loadedMispEvents = @{}
 $global:MispSettings = $null
 
 # Function is responsible for saving the settings, necessary for the MISP-connection.
@@ -74,8 +74,8 @@ function Get-MispConfiguration() {
 function Test-MispConnection() {
 	$response = Invoke-MispRequest -RequestEndpoint "servers/getVersion" -RequestMethod "Get"
 
-	if($response -ne $null) {
-		Write-Host -ForegroundColor green "Connection to MISP-Instance" $global:MispSettings.InstanceUri "with version" $result.version "successful."
+	if($null -ne $response) {
+		Write-Host -ForegroundColor green "Connection to MISP-Instance" $global:MispSettings.InstanceUri "with version" $response.version "successful."
 		return $true
 	} else {
 		Write-Host -ForegroundColor red "Error while connecting to MISP-Instance. Check the connection, the address of the instance and the API-Key. Maybe you have a self signed certificate and are not running in debug mode?"
@@ -92,7 +92,7 @@ function Invoke-MispRequest() {
 		$RequestBody
 	)
 
-	if(($RequestMethod.ToLower() -eq "post") -and ($RequestBody -eq $null)) {
+	if(($RequestMethod.ToLower() -eq "post") -and ($null -eq $RequestBody)) {
 		return $null
 	} else {
 		$MispRequestHeaders = @{
@@ -123,12 +123,11 @@ function Get-MispEventKnownState {
 	)
 
 	# check if an event is already known (stored in saved events)
-	foreach ($loadedEvent in $global:loadedMispEvents) {
-		if($loadedEvent.id -eq $MispEvent.id) {
-			return $true
-		}
+	if($null -ne $global:loadedMispEvents[$MispEvent.uuid]) {
+		return $true
+	} else {
+		return $false
 	}
-	return $false
 }
 
 # Function gets a MISP Event by its ID
@@ -138,7 +137,7 @@ function Get-MispEventById() {
 	)
 
 	$response = Invoke-MispRequest -RequestEndpoint "events/view/$EventId" -RequestMethod "Get"
-	if($response -ne $null) {
+	if($null -ne $response) {
 		return $response.Event
 	} else {
 		return $null
@@ -160,7 +159,7 @@ function Search-MispEventsByAttribute() {
 
 
 	$response = Invoke-MispRequest -RequestEndpoint "events/restsearch/" -RequestMethod "Post" -RequestBody $MispSearch
-	if($response -ne $null) {
+	if($null -ne $response) {
 		return $response.response.Event
 	} else {
 		return $null
@@ -172,15 +171,19 @@ function Save-MispEvent() {
 	param (
 		$MispEvent
 	)
+
 	if (-not (Get-MispEventKnownState($MispEvent))) {
-		$global:loadedMispEvents.Add($MispEvent) > $null
+		$global:loadedMispEvents[$MispEvent.uuid] = $MispEvent
 
 		if($PSVersionTable.Platform -eq "Unix") {
 			$StorePath = "~/.PSMISP/"
 		} elseif($Env:OS -eq "Windows_NT") {
 			$StorePath = "$env:APPDATA\PSMISP\"
 		}
-		$global:loadedMispEvents | Select-Object -Property id, uuid, timestamp | ConvertTo-Json | Out-File ($StorePath+"events.json")
+		
+		$list = New-Object Collections.Generic.List[PSCustomObject]
+		$global:loadedMispEvents.GetEnumerator() | ForEach-Object { $list.Add($_.Value -as [PSCustomObject]) }
+		$list | Select-Object -Property id, uuid, timestamp | ConvertTo-Json | Out-File ($StorePath+"events.json")
 		Write-Host -ForegroundColor green "Event added sucessfully."
 	} else {
 		Write-Host -ForegroundColor red "Event is already on the list of saved events."
@@ -193,20 +196,23 @@ function Remove-MispEventByID() {
 		$MispEventID
 	)
 
+	$MispEvent = Get-MispEventById($MispEventID)
 	# search event from saved list by event id, return true, if removal was successful
-	foreach ($MispEvent in $global:loadedMispEvents) {
-		if($MispEvent.id -eq $MispEventID) {
-			$global:loadedMispEvents.Remove($MispEvent)
-			if($PSVersionTable.Platform -eq "Unix") {
-        		$StorePath = "~/.PSMISP/"
-			} elseif($Env:OS -eq "Windows_NT") {
-				$StorePath = "$env:APPDATA\PSMISP\"
-			}
-    		$global:loadedMispEvents | ConvertTo-Json | Out-File ($StorePath+"events.json")
-			return $true
+	if(($null -ne $MispEvent) -and ($null -ne $global:loadedMispEvents[$MispEvent.uuid])){
+		$global:loadedMispEvents.Remove($MispEvent.uuid)
+		if($PSVersionTable.Platform -eq "Unix") {
+        	$StorePath = "~/.PSMISP/"
+		} elseif($Env:OS -eq "Windows_NT") {
+			$StorePath = "$env:APPDATA\PSMISP\"
 		}
+
+		$list = New-Object Collections.Generic.List[PSCustomObject]
+		$global:loadedMispEvents.GetEnumerator() | ForEach-Object { $list.Add($_.Value -as [PSCustomObject]) }
+		$list | Select-Object -Property id, uuid, timestamp | ConvertTo-Json | Out-File ($StorePath+"events.json")
+		return $true
+	} else {
+		return $false
 	}
-	return $false
 }
 
 # Function handles the menu, for a given MISP event
@@ -269,7 +275,7 @@ function Get-SavedMispEventList() {
 				$loadedEvent | Add-Member -MemberType NoteProperty -Name "modified" -Value $false
 			}
 			$loadedEvent | Add-Member -MemberType NoteProperty -Name "known" -Value $true
-			$global:loadedMispEvents.Add($loadedEvent) > $null
+			$global:loadedMispEvents[$loadedEvent.uuid] = $loadedEvent
 		}
 		Write-Host -ForegroundColor green "Loaded" $global:loadedMispEvents.Count "event(s) successfully." $modifiedCounter "event(s) has/have been modified."
 	}
@@ -401,7 +407,7 @@ if($MispConnectionEstablished) {
 			if($global:loadedMispEvents.Count -eq 0) {
 				Write-Host -ForegroundColor red "No MISP event saved."  # Print if list is empty
 			}
-			Write-MispEventTable($global:loadedMispEvents)
+			Write-MispEventTable($global:loadedMispEvents.Values)
 		}
 		# Handle removing event by ID
 		elseif (($key.Character -eq 'r') -or ($key.Character -eq 'R')) {
